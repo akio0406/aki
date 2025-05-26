@@ -1334,7 +1334,7 @@ async def make_logo(client, message):
 
     prompt = message.text.split(" ", 1)[1].strip()
 
-    # Clean prompt: remove single quotes and other problematic characters
+    # Clean prompt: remove problematic characters
     prompt = re.sub(r"[\"']", "", prompt)
 
     await message.reply("🎨 Generating your logo...")
@@ -1348,7 +1348,8 @@ async def make_logo(client, message):
         "model": "dall-e-3",
         "prompt": prompt,
         "n": 1,
-        "size": "512x512"
+        "size": "1024x1024",  # Only 1024x1024 is supported by DALL·E 3
+        "response_format": "url"
     }
 
     try:
@@ -1372,6 +1373,7 @@ async def make_logo(client, message):
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
+
 
 
 app.run()
