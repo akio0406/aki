@@ -1345,6 +1345,7 @@ async def make_logo(client, message):
     }
 
     json_data = {
+        "model": "dall-e-3",
         "prompt": prompt,
         "n": 1,
         "size": "512x512"
@@ -1371,5 +1372,6 @@ async def make_logo(client, message):
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
+
 
 app.run()
