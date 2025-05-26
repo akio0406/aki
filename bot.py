@@ -1323,6 +1323,8 @@ import requests
 from pyrogram import filters
 from io import BytesIO
 
+DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
+
 @app.on_message(filters.command("makelogo"))
 async def make_logo(client, message):
     if len(message.command) < 2:
@@ -1332,26 +1334,37 @@ async def make_logo(client, message):
     prompt = message.text.split(" ", 1)[1].strip()
     await message.reply("🎨 Generating your logo...")
 
-    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
-    payload = {"inputs": f"Logo design, {prompt}"}
+    headers = {
+        "api-key": DEEPAI_API_KEY
+    }
+    payload = {
+        "text": prompt
+    }
 
     try:
         response = requests.post(
-            "https://api-inference.huggingface.co/models/prompthero/openjourney",
+            "https://api.deepai.org/api/text2img",
             headers=headers,
-            json=payload
+            data=payload
         )
 
         if response.status_code == 200:
-            image_bytes = response.content
-            image = BytesIO(image_bytes)
-            image.name = "logo.png"
-            await message.chat.do_action("upload_photo")
-            await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
+            data = response.json()
+            image_url = data.get("output_url")
+            if image_url:
+                image_response = requests.get(image_url)
+                image_bytes = image_response.content
+                image = BytesIO(image_bytes)
+                image.name = "logo.png"
+                await message.chat.do_action("upload_photo")
+                await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
+            else:
+                await message.reply("❌ Failed to get image URL from API response.")
         else:
             await message.reply(f"❌ Error generating logo:\nStatus Code: {response.status_code}\n{response.text}")
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
+
 
 app.run()
