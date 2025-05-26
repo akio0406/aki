@@ -1320,60 +1320,43 @@ async def check_lines(_, message: Message):
 
 import os
 import requests
-from pyrogram import filters
+from pyrogram import filters, enums
 from io import BytesIO
-import re
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+from PIL import Image
 
 @app.on_message(filters.command("makelogo"))
 async def make_logo(client, message):
     if len(message.command) < 2:
-        await message.reply("ℹ️ Usage: `/makelogo your text here`")
+        await message.reply(ℹ️ Usage: `/makelogo your text here`")
         return
 
     prompt = message.text.split(" ", 1)[1].strip()
-
-    # Clean prompt: remove problematic characters
-    prompt = re.sub(r"[\"']", "", prompt)
-
     await message.reply("🎨 Generating your logo...")
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    json_data = {
-        "model": "dall-e-3",
-        "prompt": prompt,
-        "n": 1,
-        "size": "1024x1024",  # Only 1024x1024 is supported by DALL·E 3
-        "response_format": "url"
-    }
-
     try:
-        response = requests.post(
-            "https://api.openai.com/v1/images/generations",
-            headers=headers,
-            json=json_data
-        )
-        response.raise_for_status()
-        data = response.json()
-        image_url = data["data"][0]["url"]
+        encoded_prompt = requests.utils.quote(prompt)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        response = requests.get(image_url)
 
-        image_response = requests.get(image_url)
-        image_response.raise_for_status()
+        if response.status_code == 200:
+            image_bytes = response.content
+            image = Image.open(BytesIO(image_bytes)).convert("RGBA")
 
-        image = BytesIO(image_response.content)
-        image.name = "logo.png"
+            # Crop out bottom-right watermark (adjust size as needed)
+            width, height = image.size
+            cropped_image = image.crop((0, 0, width, height - 80))  # crop bottom 80px
 
-        await client.send_chat_action(message.chat.id, "upload_photo")
-        await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
+            output = BytesIO()
+            cropped_image.save(output, format="PNG")
+            output.name = "logo.png"
+            output.seek(0)
+
+            await client.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_PHOTO)
+            await message.reply_photo(photo=output, caption=f"✅ Logo for: `{prompt}`")
+        else:
+            await message.reply(f"❌ Error fetching image:\nStatus Code: {response.status_code}")
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
-
-
 
 app.run()
