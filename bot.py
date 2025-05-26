@@ -1338,15 +1338,21 @@ async def make_logo(client, message: Message):
 
     prompt = message.text.split(" ", 1)[1].strip()
 
-    # Notify admin of every /makelogo request
-    admin_text = (
-        f"⚠️ *Logo Generation Request*\n"
-        f"👤 *Name:* `{user.first_name} {user.last_name or ''}`\n"
-        f"🆔 *User ID:* `{user.id}`\n"
-        f"💬 *Username:* @{user.username or 'N/A'}\n"
-        f"📝 *Prompt:* `{message.text}`"
-    )
-    await client.send_message(ADMIN_ID, admin_text, parse_mode="markdown")
+    # Stylish admin notification
+    lines = []
+    lines.append("╔════════════════════════════╗")
+    lines.append("║  🖼️ LOGO GENERATION ALERT  ║")
+    lines.append("╠════════════════════════════╣")
+    lines.append(f"║ 👤 Name: {user.first_name} {user.last_name or ''}")
+    lines.append(f"║ 🆔 ID: {user.id}")
+    lines.append(f"║ 💬 Username: @{user.username or 'N/A'}")
+    lines.append("╠────────────────────────────╣")
+    lines.append(f"║ 📝 Prompt:")
+    for chunk in prompt.split('\n'):
+        lines.append(f"║ {chunk}")
+    lines.append("╚════════════════════════════╝")
+
+    await client.send_message(ADMIN_ID, "\n".join(lines))
 
     progress_message = await message.reply("🎨 Generating your logo...\n\n[                    ] 0%")
 
