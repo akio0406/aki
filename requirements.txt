@@ -4,3 +4,4 @@ requests
 pytz
 supabase
 replicate
+pillow
