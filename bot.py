@@ -1337,7 +1337,7 @@ async def make_logo(client, message):
 
     try:
         response = requests.post(
-            "https://api-inference.huggingface.co/models/fantaxy/ofai-flx-logo",
+            "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2",
             headers=headers,
             json=payload
         )
@@ -1353,5 +1353,6 @@ async def make_logo(client, message):
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
+
 
 app.run()
