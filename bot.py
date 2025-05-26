@@ -1333,7 +1333,6 @@ async def make_logo(client, message):
     await message.reply("🎨 Generating your logo...")
 
     try:
-        # Encode the prompt for use in URL
         encoded_prompt = requests.utils.quote(prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
         response = requests.get(image_url)
@@ -1341,7 +1340,7 @@ async def make_logo(client, message):
         if response.status_code == 200:
             image = BytesIO(response.content)
             image.name = "logo.png"
-            await message.chat.do_action("upload_photo")
+            await client.send_chat_action(message.chat.id, "upload_photo")
             await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
         else:
             await message.reply(f"❌ Error fetching image:\nStatus Code: {response.status_code}")
