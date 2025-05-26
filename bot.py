@@ -1322,6 +1322,7 @@ import os
 import requests
 from pyrogram import filters
 from io import BytesIO
+import re
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -1332,6 +1333,10 @@ async def make_logo(client, message):
         return
 
     prompt = message.text.split(" ", 1)[1].strip()
+
+    # Clean prompt: remove single quotes and other problematic characters
+    prompt = re.sub(r"[\"']", "", prompt)
+
     await message.reply("🎨 Generating your logo...")
 
     headers = {
