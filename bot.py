@@ -1323,40 +1323,84 @@ import requests
 from pyrogram import filters, enums
 from io import BytesIO
 from PIL import Image
+import asyncio
 
 @app.on_message(filters.command("makelogo"))
-async def make_logo(client, message):
+async def make_logo(client, message: Message):
+    user = message.from_user
+    if not user:
+        await message.reply("❌ Cannot identify you.")
+        return
+
     if len(message.command) < 2:
         await message.reply("ℹ️ Usage: `/makelogo your text here`")
         return
 
     prompt = message.text.split(" ", 1)[1].strip()
-    await message.reply("🎨 Generating your logo...")
+
+    # Notify admin if user is NOT admin
+    if user.id != ADMIN_ID:
+        admin_text = (
+            "⚠️ *Logo generation requested by user*\n"
+            "──────────────────────────────\n"
+            f"👤 User: `{user.first_name} {user.last_name or ''}` (`{user.id}`)\n"
+            f"💬 Username: @{user.username or 'N/A'}\n"
+            f"📝 Prompt: `{prompt}`\n"
+            "──────────────────────────────"
+        )
+        await client.send_message(ADMIN_ID, admin_text, parse_mode="markdown")
+
+    progress_message = await message.reply("🎨 Generating your logo...\n\n[                    ] 0%")
 
     try:
         encoded_prompt = requests.utils.quote(prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        response = requests.get(image_url)
 
-        if response.status_code == 200:
-            image_bytes = response.content
-            image = Image.open(BytesIO(image_bytes)).convert("RGBA")
+        loop = asyncio.get_event_loop()
 
-            # Crop out bottom-right watermark (adjust size as needed)
-            width, height = image.size
-            cropped_image = image.crop((0, 0, width, height - 80))  # crop bottom 80px
+        async def update_progress(progress_msg, duration=6, steps=20):
+            for i in range(steps + 1):
+                percent = int(i * 100 / steps)
+                bars = '█' * i + ' ' * (steps - i)
+                spinner = ['-', '\\', '|', '/'][i % 4]
+                text = f"🎨 Generating your logo...\n\n[{bars}] {percent}% {spinner}"
+                try:
+                    await progress_msg.edit(text)
+                except Exception:
+                    pass
+                await asyncio.sleep(duration / steps)
 
-            output = BytesIO()
-            cropped_image.save(output, format="PNG")
-            output.name = "logo.png"
-            output.seek(0)
+        progress_task = asyncio.create_task(update_progress(progress_message))
 
-            await client.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_PHOTO)
-            await message.reply_photo(photo=output, caption=f"✅ Logo for: `{prompt}`")
-        else:
-            await message.reply(f"❌ Error fetching image:\nStatus Code: {response.status_code}")
+        def fetch_image():
+            r = requests.get(image_url)
+            r.raise_for_status()
+            return r.content
+
+        image_bytes = await loop.run_in_executor(None, fetch_image)
+
+        if not progress_task.done():
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+
+        image = Image.open(BytesIO(image_bytes)).convert("RGBA")
+        width, height = image.size
+        cropped_image = image.crop((0, 0, width, height - 80))
+
+        output = BytesIO()
+        cropped_image.save(output, format="PNG")
+        output.name = "logo.png"
+        output.seek(0)
+
+        await client.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_PHOTO)
+        await progress_message.edit(f"✅ Logo generated for: `{prompt}`")
+        await client.send_photo(message.chat.id, photo=output, caption=f"✅ Logo for: `{prompt}`")
 
     except Exception as e:
-        await message.reply(f"❌ Exception: `{e}`")
+        await progress_message.edit(f"❌ Exception: `{e}`")
+
 
 app.run()
