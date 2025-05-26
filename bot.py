@@ -1320,8 +1320,10 @@ async def check_lines(_, message: Message):
 
 import os
 import requests
-from pyrogram import filters, enums
+from pyrogram import filters
 from io import BytesIO
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 @app.on_message(filters.command("makelogo"))
 async def make_logo(client, message):
@@ -1332,19 +1334,35 @@ async def make_logo(client, message):
     prompt = message.text.split(" ", 1)[1].strip()
     await message.reply("🎨 Generating your logo...")
 
-    try:
-        encoded_prompt = requests.utils.quote(prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        response = requests.get(image_url)
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
-        if response.status_code == 200:
-            image_bytes = response.content  # explicitly name bytes
-            image = BytesIO(image_bytes)
-            image.name = "logo.png"
-            await client.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_PHOTO)
-            await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
-        else:
-            await message.reply(f"❌ Error fetching image:\nStatus Code: {response.status_code}")
+    json_data = {
+        "prompt": prompt,
+        "n": 1,
+        "size": "512x512"
+    }
+
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/images/generations",
+            headers=headers,
+            json=json_data
+        )
+        response.raise_for_status()
+        data = response.json()
+        image_url = data["data"][0]["url"]
+
+        image_response = requests.get(image_url)
+        image_response.raise_for_status()
+
+        image = BytesIO(image_response.content)
+        image.name = "logo.png"
+
+        await client.send_chat_action(message.chat.id, "upload_photo")
+        await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
