@@ -1348,7 +1348,7 @@ async def make_logo(client, message: Message):
             f"📝 Prompt: `{prompt}`\n"
             "──────────────────────────────"
         )
-        await client.send_message(ADMIN_ID, admin_text, parse_mode="markdown")
+        await client.send_message(ADMIN_ID, admin_text, parse_mode="markdown_v2")
 
     progress_message = await message.reply("🎨 Generating your logo...\n\n[                    ] 0%")
 
@@ -1401,6 +1401,5 @@ async def make_logo(client, message: Message):
 
     except Exception as e:
         await progress_message.edit(f"❌ Exception: `{e}`")
-
 
 app.run()
