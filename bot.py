@@ -1327,7 +1327,7 @@ from PIL import Image
 @app.on_message(filters.command("makelogo"))
 async def make_logo(client, message):
     if len(message.command) < 2:
-        await message.reply(ℹ️ Usage: `/makelogo your text here`")
+        await message.reply("ℹ️ Usage: `/makelogo your text here`")
         return
 
     prompt = message.text.split(" ", 1)[1].strip()
