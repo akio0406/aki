@@ -1332,8 +1332,14 @@ async def make_logo(client, message):
     prompt = message.text.split(" ", 1)[1].strip()
     await message.reply("🎨 Generating your logo...")
 
-    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
-    payload = {"inputs": prompt}
+    headers = {
+        "Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "inputs": prompt
+    }
 
     try:
         response = requests.post(
@@ -1342,7 +1348,8 @@ async def make_logo(client, message):
             json=payload
         )
 
-        if response.status_code == 200:
+        # Some models return JSON with base64 or URLs — we expect raw image bytes
+        if response.status_code == 200 and response.headers.get("content-type", "").startswith("image"):
             image_bytes = response.content
             image = BytesIO(image_bytes)
             image.name = "logo.png"
