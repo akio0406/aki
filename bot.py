@@ -1332,24 +1332,17 @@ async def make_logo(client, message):
     prompt = message.text.split(" ", 1)[1].strip()
     await message.reply("🎨 Generating your logo...")
 
-    headers = {
-        "Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "inputs": prompt
-    }
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
+    payload = {"inputs": f"Logo design, {prompt}"}
 
     try:
         response = requests.post(
-            "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2",
+            "https://api-inference.huggingface.co/models/prompthero/openjourney",
             headers=headers,
             json=payload
         )
 
-        # Some models return JSON with base64 or URLs — we expect raw image bytes
-        if response.status_code == 200 and response.headers.get("content-type", "").startswith("image"):
+        if response.status_code == 200:
             image_bytes = response.content
             image = BytesIO(image_bytes)
             image.name = "logo.png"
@@ -1360,6 +1353,5 @@ async def make_logo(client, message):
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
-
 
 app.run()
