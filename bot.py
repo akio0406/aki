@@ -1323,8 +1323,6 @@ import requests
 from pyrogram import filters
 from io import BytesIO
 
-DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
-
 @app.on_message(filters.command("makelogo"))
 async def make_logo(client, message):
     if len(message.command) < 2:
@@ -1334,34 +1332,19 @@ async def make_logo(client, message):
     prompt = message.text.split(" ", 1)[1].strip()
     await message.reply("🎨 Generating your logo...")
 
-    headers = {
-        "api-key": DEEPAI_API_KEY
-    }
-    payload = {
-        "text": prompt
-    }
-
     try:
-        response = requests.post(
-            "https://api.deepai.org/api/text2img",
-            headers=headers,
-            data=payload
-        )
+        # Encode the prompt for use in URL
+        encoded_prompt = requests.utils.quote(prompt)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        response = requests.get(image_url)
 
         if response.status_code == 200:
-            data = response.json()
-            image_url = data.get("output_url")
-            if image_url:
-                image_response = requests.get(image_url)
-                image_bytes = image_response.content
-                image = BytesIO(image_bytes)
-                image.name = "logo.png"
-                await message.chat.do_action("upload_photo")
-                await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
-            else:
-                await message.reply("❌ Failed to get image URL from API response.")
+            image = BytesIO(response.content)
+            image.name = "logo.png"
+            await message.chat.do_action("upload_photo")
+            await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
         else:
-            await message.reply(f"❌ Error generating logo:\nStatus Code: {response.status_code}\n{response.text}")
+            await message.reply(f"❌ Error fetching image:\nStatus Code: {response.status_code}")
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
