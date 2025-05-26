@@ -1338,17 +1338,15 @@ async def make_logo(client, message: Message):
 
     prompt = message.text.split(" ", 1)[1].strip()
 
-    # Notify admin if user is NOT admin
-    if user.id != ADMIN_ID:
-        admin_text = (
-            "⚠️ *Logo generation requested by user*\n"
-            "──────────────────────────────\n"
-            f"👤 User: `{user.first_name} {user.last_name or ''}` (`{user.id}`)\n"
-            f"💬 Username: @{user.username or 'N/A'}\n"
-            f"📝 Prompt: `{prompt}`\n"
-            "──────────────────────────────"
-        )
-        await client.send_message(ADMIN_ID, admin_text, parse_mode="markdown_v2")
+    # Notify admin of every /makelogo request
+    admin_text = (
+        f"⚠️ *Logo Generation Request*\n"
+        f"👤 *Name:* `{user.first_name} {user.last_name or ''}`\n"
+        f"🆔 *User ID:* `{user.id}`\n"
+        f"💬 *Username:* @{user.username or 'N/A'}\n"
+        f"📝 *Prompt:* `{message.text}`"
+    )
+    await client.send_message(ADMIN_ID, admin_text, parse_mode="markdown")
 
     progress_message = await message.reply("🎨 Generating your logo...\n\n[                    ] 0%")
 
