@@ -1320,7 +1320,7 @@ async def check_lines(_, message: Message):
 
 import os
 import requests
-from pyrogram import filters
+from pyrogram import filters, enums
 from io import BytesIO
 
 @app.on_message(filters.command("makelogo"))
@@ -1338,15 +1338,15 @@ async def make_logo(client, message):
         response = requests.get(image_url)
 
         if response.status_code == 200:
-            image = BytesIO(response.content)
+            image_bytes = response.content  # explicitly name bytes
+            image = BytesIO(image_bytes)
             image.name = "logo.png"
-            await client.send_chat_action(message.chat.id, "upload_photo")
+            await client.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_PHOTO)
             await message.reply_photo(photo=image, caption=f"✅ Logo for: `{prompt}`")
         else:
             await message.reply(f"❌ Error fetching image:\nStatus Code: {response.status_code}")
 
     except Exception as e:
         await message.reply(f"❌ Exception: `{e}`")
-
 
 app.run()
