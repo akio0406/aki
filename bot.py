@@ -147,7 +147,7 @@ import asyncio
 @app.on_message(filters.command("checkuser"))
 async def check_user(client, message: Message):
     if not message.reply_to_message or not message.reply_to_message.document:
-        await message.reply("❌ Please reply to a .txt file containing Roblox usernames.")
+        await message.reply("❌ Please reply to a .txt file containing Roblox usernames and passwords (username:password).")
         return
 
     document = message.reply_to_message.document
@@ -159,19 +159,23 @@ async def check_user(client, message: Message):
     with open(file_path, "rb") as f:
         content = f.read().decode("utf-8")
 
-    usernames = []
+    user_pass_list = []
     for line in content.splitlines():
         line = line.strip()
         if not line:
             continue
-        username = line.split(":", 1)[0]
-        usernames.append(username)
+        parts = line.split(":", 1)
+        if len(parts) == 2:
+            username, password = parts[0].strip(), parts[1].strip()
+        else:
+            username, password = parts[0].strip(), "N/A"
+        user_pass_list.append((username, password))
 
-    if not usernames:
-        await message.reply("❌ No usernames found in the file.")
+    if not user_pass_list:
+        await message.reply("❌ No usernames (and passwords) found in the file.")
         return
 
-    progress_message = await message.reply(f"⏳ Checking {len(usernames)} usernames...")
+    progress_message = await message.reply(f"⏳ Checking {len(user_pass_list)} usernames...")
 
     def fetch_roblox_user_info_sync(username):
         try:
@@ -183,7 +187,7 @@ async def check_user(client, message: Message):
             r.raise_for_status()
             data = r.json()
             if not data.get("data"):
-                return f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
+                return None, f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
 
             user_data = data["data"][0]
             user_id = user_data["id"]
@@ -196,46 +200,44 @@ async def check_user(client, message: Message):
             badges = [badge['name'] for badge in badges_data.get('data', [])]
             avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
 
-            result = f"""
-┌─────────────────────────────┐
-│        🕵️ Roblox Info       │
-├─────────────────────────────┤
-│ **Display Name:** {user_info.get("displayName", "N/A")}
-│ **Username:** {user_info.get("name", "N/A")}
-│ **User ID:** `{user_id}`
-│ **Created On:** {user_info.get("created", "N/A")}
-│ **Description:** {user_info.get("description", "No bio set") or "No bio set"}
-│ **Friends:** {friends_count.get("count", "N/A")}
-│ **Followers:** {followers_count.get("count", "N/A")}
-│ **Following:** {following_count.get("count", "N/A")}
-│ **Badges:** {", ".join(badges) if badges else "No public badges"}
-├─────────────────────────────┤
-│ [🖼️ Avatar Image]({avatar_url})
-└─────────────────────────────┘
-""".strip()
-
-            return result
+            info_text = (
+                f"┌─────────────────────────────┐\n"
+                f"│        🕵️ Roblox Info       │\n"
+                f"├─────────────────────────────┤\n"
+                f"│ Username: {username:<14} │ Password: [copy](tg://copy?text={password})\n"
+                f"│ Display Name: {user_info.get('displayName', 'N/A')}\n"
+                f"│ User ID: `{user_id}`\n"
+                f"│ Created On: {user_info.get('created', 'N/A')}\n"
+                f"│ Description: {user_info.get('description', 'No bio set') or 'No bio set'}\n"
+                f"│ Friends: {friends_count.get('count', 'N/A')}\n"
+                f"│ Followers: {followers_count.get('count', 'N/A')}\n"
+                f"│ Following: {following_count.get('count', 'N/A')}\n"
+                f"│ Badges: {', '.join(badges) if badges else 'No public badges'}\n"
+                f"└─────────────────────────────┘"
+            )
+            return avatar_url, info_text
         except Exception as e:
-            return f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
-
-    results = []
+            return None, f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
 
     try:
-        for idx, username in enumerate(usernames, start=1):
-            print(f"Checking username {idx}/{len(usernames)}: {username}")  # debug log
-            info = await asyncio.to_thread(fetch_roblox_user_info_sync, username)
-            results.append(info)
+        for idx, (username, password) in enumerate(user_pass_list, start=1):
+            print(f"Checking username {idx}/{len(user_pass_list)}: {username}")
+            avatar_url, info_text = await asyncio.to_thread(fetch_roblox_user_info_sync, username)
+
+            if avatar_url is None:
+                await message.reply(info_text)
+            else:
+                # Send photo with inline caption including tappable copy password
+                await client.send_photo(
+                    chat_id=message.chat.id,
+                    photo=avatar_url,
+                    caption=info_text,
+                    parse_mode=enums.ParseMode.MARKDOWN,
+                )
+
             await asyncio.sleep(0.3)
     except Exception as e:
         await message.reply(f"❌ Unexpected error occurred: {e}")
-        await progress_message.delete()
-        return
-
-    text = "\n\n".join(results)
-
-    # send in chunks to avoid message length limits
-    for i in range(0, len(text), 4000):
-        await message.reply(text[i:i+4000], parse_mode=enums.ParseMode.MARKDOWN)
 
     await progress_message.delete()
 
