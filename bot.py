@@ -155,7 +155,6 @@ async def check_user(client, message: Message):
         await message.reply("❌ The replied file must be a .txt file.")
         return
 
-    # Download file and read content
     file_path = await client.download_media(document)
     with open(file_path, "rb") as f:
         content = f.read().decode("utf-8")
@@ -174,10 +173,8 @@ async def check_user(client, message: Message):
 
     progress_message = await message.reply(f"⏳ Checking {len(usernames)} usernames...")
 
-    # This is a blocking function that we run in a thread pool to avoid blocking event loop
     def fetch_roblox_user_info_sync(username):
         try:
-            # Get user id
             r = requests.post(
                 "https://users.roblox.com/v1/usernames/users",
                 json={"usernames": [username], "excludeBannedUsers": False},
@@ -191,7 +188,6 @@ async def check_user(client, message: Message):
             user_data = data["data"][0]
             user_id = user_data["id"]
 
-            # Get user info
             user_info = requests.get(f"https://users.roblox.com/v1/users/{user_id}", timeout=10).json()
             friends_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/friends/count", timeout=10).json()
             followers_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followers/count", timeout=10).json()
@@ -223,16 +219,21 @@ async def check_user(client, message: Message):
             return f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
 
     results = []
-    loop = asyncio.get_event_loop()
 
-    for username in usernames:
-        info = await loop.run_in_executor(None, fetch_roblox_user_info_sync, username)
-        results.append(info)
-        await asyncio.sleep(0.3)  # polite delay
+    try:
+        for idx, username in enumerate(usernames, start=1):
+            print(f"Checking username {idx}/{len(usernames)}: {username}")  # debug log
+            info = await asyncio.to_thread(fetch_roblox_user_info_sync, username)
+            results.append(info)
+            await asyncio.sleep(0.3)
+    except Exception as e:
+        await message.reply(f"❌ Unexpected error occurred: {e}")
+        await progress_message.delete()
+        return
 
     text = "\n\n".join(results)
 
-    # Telegram message max length ~4096, chunk accordingly
+    # send in chunks to avoid message length limits
     for i in range(0, len(text), 4000):
         await message.reply(text[i:i+4000], parse_mode=enums.ParseMode.MARKDOWN)
 
