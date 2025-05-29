@@ -5,3 +5,4 @@ pytz
 supabase
 replicate
 pillow
+rembg

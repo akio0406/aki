@@ -208,22 +208,27 @@ async def check_user(client, message: Message):
                 avatar_resp = requests.get(avatar_url, timeout=10)
                 avatar_resp.raise_for_status()
                 avatar_image = Image.open(io.BytesIO(avatar_resp.content)).convert("RGBA")
-                transparent_avatar = remove(avatar_image)
                 avatar_bytes = io.BytesIO()
-                transparent_avatar.save(avatar_bytes, format="PNG")
+                transparent = remove(avatar_image)
+                transparent.save(avatar_bytes, format="PNG")
                 avatar_bytes.seek(0)
             except Exception:
                 avatar_bytes = None
+
+            # Escape Markdown-sensitive characters
+            escaped_username = username.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
+            escaped_password = password.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
 
             info_text = (
                 f"┌─────────────────────────────┐\n"
                 f"│        🕵️ Roblox Info       │\n"
                 f"├─────────────────────────────┤\n"
-                f"│ Username: {username:<14} │ Password: [copy](tg://copy?text={password})\n"
+                f"│ Username: [{escaped_username}](tg://copy?text={username})\n"
+                f"│ Password: [{escaped_password}](tg://copy?text={password})\n"
                 f"│ Display Name: {user_info.get('displayName', 'N/A')}\n"
                 f"│ User ID: `{user_id}`\n"
                 f"│ Created On: {user_info.get('created', 'N/A')}\n"
-                f"│ Description: {user_info.get('description', 'No bio set') or 'No bio set'}\n"
+                f"│ Description: {user_info.get('description') or 'No bio set'}\n"
                 f"│ Friends: {friends_count.get('count', 'N/A')}\n"
                 f"│ Followers: {followers_count.get('count', 'N/A')}\n"
                 f"│ Following: {following_count.get('count', 'N/A')}\n"
@@ -256,6 +261,7 @@ async def check_user(client, message: Message):
         await message.reply(f"❌ Unexpected error occurred: {e}")
 
     await progress_message.delete()
+
 
 
 # === Start & Referral Commands ===
