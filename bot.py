@@ -188,7 +188,7 @@ async def check_user(client, message: Message):
             r.raise_for_status()
             data = r.json()
             if not data.get("data"):
-                return None, f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
+                return None, None, f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
 
             user_data = data["data"][0]
             user_id = user_data["id"]
@@ -201,9 +201,12 @@ async def check_user(client, message: Message):
             badges = [badge['name'] for badge in badges_data.get('data', [])]
 
             avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
-            avatar_resp = requests.get(avatar_url, timeout=10)
-            avatar_resp.raise_for_status()
-            avatar_bytes = avatar_resp.content
+            try:
+                avatar_resp = requests.get(avatar_url, timeout=10)
+                avatar_resp.raise_for_status()
+                avatar_bytes = avatar_resp.content
+            except requests.exceptions.HTTPError:
+                avatar_bytes = None  # avatar not found
 
             info_text = (
                 f"┌─────────────────────────────┐\n"
@@ -220,29 +223,34 @@ async def check_user(client, message: Message):
                 f"│ Badges: {', '.join(badges) if badges else 'No public badges'}\n"
                 f"└─────────────────────────────┘"
             )
-            return avatar_bytes, info_text
+            return avatar_bytes, info_text, None
         except Exception as e:
-            return None, f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
+            return None, None, f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
 
     try:
         for idx, (username, password) in enumerate(user_pass_list, start=1):
             print(f"Checking username {idx}/{len(user_pass_list)}: {username}")
-            avatar_bytes, info_text = await asyncio.to_thread(fetch_roblox_user_info_sync, username, password)
+            avatar_bytes, info_text, error_msg = await asyncio.to_thread(fetch_roblox_user_info_sync, username, password)
 
-            if avatar_bytes is None:
-                await message.reply(info_text)
-            else:
+            if error_msg:
+                await message.reply(error_msg)
+            elif avatar_bytes:
                 await client.send_photo(
                     chat_id=message.chat.id,
                     photo=io.BytesIO(avatar_bytes),
                     caption=info_text,
                     parse_mode=enums.ParseMode.MARKDOWN,
                 )
+            else:
+                # Send text only if no avatar
+                await message.reply(info_text)
+
             await asyncio.sleep(0.5)
     except Exception as e:
         await message.reply(f"❌ Unexpected error occurred: {e}")
 
     await progress_message.delete()
+
 
 
 # === Start & Referral Commands ===
