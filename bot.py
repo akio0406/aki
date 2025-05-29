@@ -155,8 +155,10 @@ async def check_user(client, message: Message):
         await message.reply("❌ The replied file must be a .txt file.")
         return
 
-    # Download file bytes
-    file_bytes = await client.download_media(document, file_bytes=True)
+    # Download file and read bytes manually (fix)
+    file_path = await client.download_media(document)
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
     content = file_bytes.decode("utf-8")
 
     usernames = []
@@ -237,6 +239,7 @@ async def check_user(client, message: Message):
         await message.reply(text, parse_mode=enums.ParseMode.MARKDOWN)
 
     await progress_message.delete()
+
 
 # === Start & Referral Commands ===
 
