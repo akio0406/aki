@@ -202,7 +202,6 @@ async def check_user(client, message: Message):
             badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
             badges = [badge['name'] for badge in badges_data.get('data', [])]
 
-            # Full-body avatar with white background
             avatar_url = f"https://www.roblox.com/Thumbs/Avatar.ashx?x=420&y=420&format=png&userid={user_id}"
             try:
                 avatar_resp = requests.get(avatar_url, timeout=10)
@@ -215,7 +214,6 @@ async def check_user(client, message: Message):
             except Exception:
                 avatar_bytes = None
 
-            # Escape Markdown-sensitive characters
             escaped_username = username.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
             escaped_password = password.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
 
@@ -244,24 +242,27 @@ async def check_user(client, message: Message):
             print(f"Checking username {idx}/{len(user_pass_list)}: {username}")
             avatar_bytes, info_text, error_msg = await asyncio.to_thread(fetch_roblox_user_info_sync, username, password)
 
-            if error_msg:
-                await message.reply(error_msg)
-            elif avatar_bytes:
-                await client.send_photo(
-                    chat_id=message.chat.id,
-                    photo=avatar_bytes,
-                    caption=info_text,
-                    parse_mode=enums.ParseMode.MARKDOWN,
-                )
-            else:
-                await message.reply(info_text)
+            try:
+                if error_msg:
+                    await message.reply(error_msg)
+                elif avatar_bytes:
+                    avatar_bytes.name = "avatar.png"  # Fix: assign name for Pyrogram
+                    await client.send_photo(
+                        chat_id=message.chat.id,
+                        photo=avatar_bytes,
+                        caption=info_text,
+                        parse_mode=enums.ParseMode.MARKDOWN,
+                    )
+                else:
+                    await message.reply(info_text)
+            except Exception as send_exc:
+                await message.reply(f"❌ Failed to send result for {username}: {send_exc}")
 
             await asyncio.sleep(0.5)
     except Exception as e:
         await message.reply(f"❌ Unexpected error occurred: {e}")
 
     await progress_message.delete()
-
 
 
 # === Start & Referral Commands ===
