@@ -1444,6 +1444,10 @@ async def check_user(client, message: Message):
             return
 
         file_path = await client.download_media(document)
+        if not file_path:
+            await message.reply("❌ Failed to download the file.")
+            logging.error("download_media returned None or empty path")
+            return
         logging.info(f"Downloaded file to {file_path}")
 
         with open(file_path, "rb") as f:
@@ -1506,8 +1510,12 @@ async def check_user(client, message: Message):
                     logging.warning(f"Failed to fetch or process avatar for {username}: {avatar_exc}")
                     avatar_bytes = None
 
-                escaped_username = username.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
-                escaped_password = password.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
+                # Escape markdown special characters
+                def escape_markdown(text):
+                    return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
+
+                escaped_username = escape_markdown(username)
+                escaped_password = escape_markdown(password)
 
                 info_text = (
                     f"┌─────────────────────────────┐\n"
@@ -1551,13 +1559,14 @@ async def check_user(client, message: Message):
                 logging.error(f"Failed to send result for {username}: {send_exc}")
                 await message.reply(f"❌ Failed to send result for {username}: {send_exc}")
 
+            # Add a short delay to avoid flooding limits
             await asyncio.sleep(0.5)
 
         await progress_message.delete()
         logging.info("Finished checking all usernames")
 
     except Exception as e:
-        logging.error(f"Unexpected error in check_user handler: {e}")
+        logging.error(f"Unexpected error in check_user handler: {e}", exc_info=True)
         await message.reply(f"❌ Unexpected error occurred: {e}")
 
 app.run()
