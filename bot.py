@@ -139,6 +139,163 @@ def redeem_referral_code(user_id, referral_code):
 
     return "✅ Successfully redeemed! You and your friend earned +1 point!"
 
+import logging
+from pyrogram import filters, enums
+from pyrogram.types import Message
+import requests
+import asyncio
+import io
+from rembg import remove
+from PIL import Image
+
+logging.basicConfig(level=logging.INFO)
+
+# Simple ping handler to verify bot is working
+@app.on_message(filters.command("ping", prefixes="/"))
+async def ping(client, message: Message):
+    logging.info(f"Ping received from user {message.from_user.id}")
+    await message.reply("Pong!")
+
+# Catch-all message logger for debugging
+@app.on_message()
+async def log_all_messages(client, message: Message):
+    text = message.text or message.caption or "non-text message"
+    user_id = message.from_user.id if message.from_user else "unknown"
+    logging.info(f"Received message from {user_id}: {text}")
+
+@app.on_message(filters.command("checkuser", prefixes="/"))
+async def check_user(client, message: Message):
+    logging.info(f"Received /checkuser command from user {message.from_user.id} in chat {message.chat.id}")
+    try:
+        # Allow reply to file or direct file
+        doc_msg = (
+            message.reply_to_message if message.reply_to_message and message.reply_to_message.document
+            else message if message.document else None
+        )
+
+        if not doc_msg or not doc_msg.document.file_name.endswith(".txt"):
+            await message.reply("❌ Please reply to or send a `.txt` file containing Roblox `username:password` lines.")
+            return
+
+        file_path = await client.download_media(doc_msg)
+        if not file_path:
+            await message.reply("❌ Failed to download the file.")
+            return
+        logging.info(f"Downloaded file to {file_path}")
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        user_pass_list = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                username, password = parts[0].strip(), parts[1].strip()
+                user_pass_list.append((username, password))
+
+        if not user_pass_list:
+            await message.reply("❌ No valid `username:password` lines found.")
+            return
+
+        progress_message = await message.reply(f"🔍 Checking `{len(user_pass_list)}` usernames...")
+
+        def fetch_info(username, password):
+            try:
+                logging.info(f"Fetching info for username: {username}")
+                r = requests.post(
+                    "https://users.roblox.com/v1/usernames/users",
+                    json={"usernames": [username], "excludeBannedUsers": False},
+                    timeout=10
+                )
+                r.raise_for_status()
+                data = r.json()
+                if not data.get("data"):
+                    return None, None, f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
+
+                user_data = data["data"][0]
+                user_id = user_data["id"]
+
+                user_info = requests.get(f"https://users.roblox.com/v1/users/{user_id}", timeout=10).json()
+                friends_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/friends/count", timeout=10).json()
+                followers_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followers/count", timeout=10).json()
+                following_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count", timeout=10).json()
+                badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
+                badges = [badge['name'] for badge in badges_data.get('data', [])]
+
+                avatar_url = f"https://www.roblox.com/Thumbs/Avatar.ashx?x=420&y=420&format=png&userid={user_id}"
+                try:
+                    avatar_resp = requests.get(avatar_url, timeout=10)
+                    avatar_resp.raise_for_status()
+                    avatar_image = Image.open(io.BytesIO(avatar_resp.content)).convert("RGBA")
+                    avatar_bytes = io.BytesIO()
+                    transparent = remove(avatar_image)
+                    transparent.save(avatar_bytes, format="PNG")
+                    avatar_bytes.seek(0)
+                except Exception as avatar_exc:
+                    logging.warning(f"Failed to fetch or process avatar for {username}: {avatar_exc}")
+                    avatar_bytes = None
+
+                # Escape markdown special characters
+                def escape_markdown(text):
+                    return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
+
+                escaped_username = escape_markdown(username)
+                escaped_password = escape_markdown(password)
+
+                info_text = (
+                    f"┌─────────────────────────────┐\n"
+                    f"│        🕵️ Roblox Info       │\n"
+                    f"├─────────────────────────────┤\n"
+                    f"│ Username: [{escaped_username}](tg://copy?text={username})\n"
+                    f"│ Password: [{escaped_password}](tg://copy?text={password})\n"
+                    f"│ Display Name: {user_info.get('displayName', 'N/A')}\n"
+                    f"│ User ID: `{user_id}`\n"
+                    f"│ Created On: {user_info.get('created', 'N/A')}\n"
+                    f"│ Description: {user_info.get('description') or 'No bio set'}\n"
+                    f"│ Friends: {friends_count.get('count', 'N/A')}\n"
+                    f"│ Followers: {followers_count.get('count', 'N/A')}\n"
+                    f"│ Following: {following_count.get('count', 'N/A')}\n"
+                    f"│ Badges: {', '.join(badges) if badges else 'No public badges'}\n"
+                    f"└─────────────────────────────┘"
+                )
+                return avatar_bytes, info_text, None
+            except Exception as e:
+                logging.error(f"Error fetching info for {username}: {e}")
+                return None, None, f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
+
+        for idx, (username, password) in enumerate(user_pass_list, start=1):
+            logging.info(f"Checking username {idx}/{len(user_pass_list)}: {username}")
+            avatar_bytes, info_text, error_msg = await asyncio.to_thread(fetch_info, username, password)
+
+            try:
+                if error_msg:
+                    await message.reply(error_msg)
+                elif avatar_bytes:
+                    avatar_bytes.name = "avatar.png"
+                    await client.send_photo(
+                        chat_id=message.chat.id,
+                        photo=avatar_bytes,
+                        caption=info_text,
+                        parse_mode=enums.ParseMode.MARKDOWN,
+                    )
+                else:
+                    await message.reply(info_text)
+            except Exception as send_exc:
+                logging.error(f"Failed to send result for {username}: {send_exc}")
+                await message.reply(f"❌ Failed to send result for {username}: {send_exc}")
+
+            await asyncio.sleep(0.5)
+
+        await progress_message.delete()
+        logging.info("Finished checking all usernames")
+        await message.reply("✅ Done checking users.")
+    except Exception as e:
+        logging.error(f"Unexpected error in check_user handler: {e}", exc_info=True)
+        await message.reply(f"❌ Unexpected error occurred: {e}")
+
 # === Start & Referral Commands ===
 
 @app.on_message(filters.command("start"))
@@ -1403,162 +1560,5 @@ async def make_logo(client, message: Message):
 
     except Exception as e:
         await progress_message.edit(f"❌ Exception: `{e}`")
-
-import logging
-from pyrogram import filters, enums
-from pyrogram.types import Message
-import requests
-import asyncio
-import io
-from rembg import remove
-from PIL import Image
-
-logging.basicConfig(level=logging.INFO)
-
-# Simple ping handler to verify bot is working
-@app.on_message(filters.command("ping", prefixes="/"))
-async def ping(client, message: Message):
-    logging.info(f"Ping received from user {message.from_user.id}")
-    await message.reply("Pong!")
-
-# Catch-all message logger for debugging
-@app.on_message()
-async def log_all_messages(client, message: Message):
-    text = message.text or message.caption or "non-text message"
-    user_id = message.from_user.id if message.from_user else "unknown"
-    logging.info(f"Received message from {user_id}: {text}")
-
-@app.on_message(filters.command("checkuser", prefixes="/"))
-async def check_user(client, message: Message):
-    logging.info(f"Received /checkuser command from user {message.from_user.id} in chat {message.chat.id}")
-    try:
-        # Allow reply to file or direct file
-        doc_msg = (
-            message.reply_to_message if message.reply_to_message and message.reply_to_message.document
-            else message if message.document else None
-        )
-
-        if not doc_msg or not doc_msg.document.file_name.endswith(".txt"):
-            await message.reply("❌ Please reply to or send a `.txt` file containing Roblox `username:password` lines.")
-            return
-
-        file_path = await client.download_media(doc_msg)
-        if not file_path:
-            await message.reply("❌ Failed to download the file.")
-            return
-        logging.info(f"Downloaded file to {file_path}")
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        user_pass_list = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(":", 1)
-            if len(parts) == 2:
-                username, password = parts[0].strip(), parts[1].strip()
-                user_pass_list.append((username, password))
-
-        if not user_pass_list:
-            await message.reply("❌ No valid `username:password` lines found.")
-            return
-
-        progress_message = await message.reply(f"🔍 Checking `{len(user_pass_list)}` usernames...")
-
-        def fetch_info(username, password):
-            try:
-                logging.info(f"Fetching info for username: {username}")
-                r = requests.post(
-                    "https://users.roblox.com/v1/usernames/users",
-                    json={"usernames": [username], "excludeBannedUsers": False},
-                    timeout=10
-                )
-                r.raise_for_status()
-                data = r.json()
-                if not data.get("data"):
-                    return None, None, f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
-
-                user_data = data["data"][0]
-                user_id = user_data["id"]
-
-                user_info = requests.get(f"https://users.roblox.com/v1/users/{user_id}", timeout=10).json()
-                friends_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/friends/count", timeout=10).json()
-                followers_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followers/count", timeout=10).json()
-                following_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count", timeout=10).json()
-                badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
-                badges = [badge['name'] for badge in badges_data.get('data', [])]
-
-                avatar_url = f"https://www.roblox.com/Thumbs/Avatar.ashx?x=420&y=420&format=png&userid={user_id}"
-                try:
-                    avatar_resp = requests.get(avatar_url, timeout=10)
-                    avatar_resp.raise_for_status()
-                    avatar_image = Image.open(io.BytesIO(avatar_resp.content)).convert("RGBA")
-                    avatar_bytes = io.BytesIO()
-                    transparent = remove(avatar_image)
-                    transparent.save(avatar_bytes, format="PNG")
-                    avatar_bytes.seek(0)
-                except Exception as avatar_exc:
-                    logging.warning(f"Failed to fetch or process avatar for {username}: {avatar_exc}")
-                    avatar_bytes = None
-
-                # Escape markdown special characters
-                def escape_markdown(text):
-                    return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
-
-                escaped_username = escape_markdown(username)
-                escaped_password = escape_markdown(password)
-
-                info_text = (
-                    f"┌─────────────────────────────┐\n"
-                    f"│        🕵️ Roblox Info       │\n"
-                    f"├─────────────────────────────┤\n"
-                    f"│ Username: [{escaped_username}](tg://copy?text={username})\n"
-                    f"│ Password: [{escaped_password}](tg://copy?text={password})\n"
-                    f"│ Display Name: {user_info.get('displayName', 'N/A')}\n"
-                    f"│ User ID: `{user_id}`\n"
-                    f"│ Created On: {user_info.get('created', 'N/A')}\n"
-                    f"│ Description: {user_info.get('description') or 'No bio set'}\n"
-                    f"│ Friends: {friends_count.get('count', 'N/A')}\n"
-                    f"│ Followers: {followers_count.get('count', 'N/A')}\n"
-                    f"│ Following: {following_count.get('count', 'N/A')}\n"
-                    f"│ Badges: {', '.join(badges) if badges else 'No public badges'}\n"
-                    f"└─────────────────────────────┘"
-                )
-                return avatar_bytes, info_text, None
-            except Exception as e:
-                logging.error(f"Error fetching info for {username}: {e}")
-                return None, None, f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
-
-        for idx, (username, password) in enumerate(user_pass_list, start=1):
-            logging.info(f"Checking username {idx}/{len(user_pass_list)}: {username}")
-            avatar_bytes, info_text, error_msg = await asyncio.to_thread(fetch_info, username, password)
-
-            try:
-                if error_msg:
-                    await message.reply(error_msg)
-                elif avatar_bytes:
-                    avatar_bytes.name = "avatar.png"
-                    await client.send_photo(
-                        chat_id=message.chat.id,
-                        photo=avatar_bytes,
-                        caption=info_text,
-                        parse_mode=enums.ParseMode.MARKDOWN,
-                    )
-                else:
-                    await message.reply(info_text)
-            except Exception as send_exc:
-                logging.error(f"Failed to send result for {username}: {send_exc}")
-                await message.reply(f"❌ Failed to send result for {username}: {send_exc}")
-
-            await asyncio.sleep(0.5)
-
-        await progress_message.delete()
-        logging.info("Finished checking all usernames")
-        await message.reply("✅ Done checking users.")
-    except Exception as e:
-        logging.error(f"Unexpected error in check_user handler: {e}", exc_info=True)
-        await message.reply(f"❌ Unexpected error occurred: {e}")
 
 app.run()
