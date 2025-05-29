@@ -1406,4 +1406,107 @@ async def make_logo(client, message: Message):
     except Exception as e:
         await progress_message.edit(f"❌ Exception: `{e}`")
 
+from pyrogram import filters, enums
+from pyrogram.types import Message
+import requests
+import asyncio
+
+@app.on_message(filters.command("checkuser"))
+async def check_user(client, message: Message):
+    # Check if this is a reply to a document
+    if not message.reply_to_message or not message.reply_to_message.document:
+        await message.reply("❌ Please reply to a .txt file containing Roblox usernames.")
+        return
+
+    document = message.reply_to_message.document
+
+    if not document.file_name.endswith(".txt"):
+        await message.reply("❌ The replied file must be a .txt file.")
+        return
+
+    # Download the file bytes
+    file = await client.download_media(document, file_bytes=True)
+    content = file.decode("utf-8")
+
+    # Parse usernames from file (username is before colon or whole line)
+    usernames = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        username = line.split(":", 1)[0]
+        usernames.append(username)
+
+    if not usernames:
+        await message.reply("❌ No usernames found in the file.")
+        return
+
+    # Inform user processing started
+    progress_message = await message.reply(f"⏳ Checking {len(usernames)} usernames...")
+
+    results = []
+
+    for username in usernames:
+        info = await fetch_roblox_user_info(username)
+        results.append(info)
+        await asyncio.sleep(0.3)  # small delay to be polite to API
+
+    text = "\n\n".join(results)
+
+    # Send results, splitting if too long
+    if len(text) > 4000:
+        for chunk_start in range(0, len(text), 4000):
+            await message.reply(text[chunk_start:chunk_start+4000], parse_mode=enums.ParseMode.MARKDOWN)
+    else:
+        await message.reply(text, parse_mode=enums.ParseMode.MARKDOWN)
+
+    await progress_message.delete()
+
+
+async def fetch_roblox_user_info(username: str) -> str:
+    try:
+        response = requests.post(
+            "https://users.roblox.com/v1/usernames/users",
+            json={"usernames": [username], "excludeBannedUsers": False}
+        ).json()
+
+        if not response.get("data") or len(response["data"]) == 0:
+            return f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
+
+        user_data = response["data"][0]
+        user_id = user_data["id"]
+
+        user_info = requests.get(f"https://users.roblox.com/v1/users/{user_id}").json()
+        friends_data = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/friends/count").json()
+        followers_data = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followers/count").json()
+        following_data = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count").json()
+        avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
+        badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc").json()
+        badges = [badge['name'] for badge in badges_data.get('data', [])]
+
+        # Markdown formatting with box and avatar clickable link
+        result = f"""
+┌─────────────────────────────┐
+│        🕵️ Roblox Info       │
+├─────────────────────────────┤
+│ **Display Name:** {user_info.get("displayName", "N/A")}
+│ **Username:** {user_info.get("name", "N/A")}
+│ **User ID:** `{user_id}`
+│ **Created On:** {user_info.get("created", "N/A")}
+│ **Description:** {user_info.get("description", "No bio set") or "No bio set"}
+│ **Friends:** {friends_data.get("count", "N/A")}
+│ **Followers:** {followers_data.get("count", "N/A")}
+│ **Following:** {following_data.get("count", "N/A")}
+│ **Badges:** {", ".join(badges) if badges else "No public badges"}
+├─────────────────────────────┤
+│ [🖼️ Avatar Image]({avatar_url})
+└─────────────────────────────┘
+""".strip()
+
+        return result
+
+    except Exception as e:
+        return f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
+
+
 app.run()
