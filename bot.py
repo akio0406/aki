@@ -150,6 +150,19 @@ from PIL import Image
 
 logging.basicConfig(level=logging.INFO)
 
+# Simple ping handler to verify bot is working
+@app.on_message(filters.command("ping", prefixes="/"))
+async def ping(client, message: Message):
+    logging.info(f"Ping received from user {message.from_user.id}")
+    await message.reply("Pong!")
+
+# Catch-all message logger for debugging
+@app.on_message()
+async def log_all_messages(client, message: Message):
+    text = message.text or message.caption or "non-text message"
+    user_id = message.from_user.id if message.from_user else "unknown"
+    logging.info(f"Received message from {user_id}: {text}")
+
 @app.on_message(filters.command("checkuser", prefixes="/"))
 async def check_user(client, message: Message):
     logging.info(f"Received /checkuser command from user {message.from_user.id} in chat {message.chat.id}")
