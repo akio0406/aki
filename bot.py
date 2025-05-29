@@ -143,6 +143,7 @@ from pyrogram import filters, enums
 from pyrogram.types import Message
 import requests
 import asyncio
+import io
 
 @app.on_message(filters.command("checkuser"))
 async def check_user(client, message: Message):
@@ -177,7 +178,7 @@ async def check_user(client, message: Message):
 
     progress_message = await message.reply(f"⏳ Checking {len(user_pass_list)} usernames...")
 
-    def fetch_roblox_user_info_sync(username):
+    def fetch_roblox_user_info_sync(username, password):
         try:
             r = requests.post(
                 "https://users.roblox.com/v1/usernames/users",
@@ -198,7 +199,11 @@ async def check_user(client, message: Message):
             following_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count", timeout=10).json()
             badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
             badges = [badge['name'] for badge in badges_data.get('data', [])]
+
             avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
+            avatar_resp = requests.get(avatar_url, timeout=10)
+            avatar_resp.raise_for_status()
+            avatar_bytes = avatar_resp.content
 
             info_text = (
                 f"┌─────────────────────────────┐\n"
@@ -215,31 +220,30 @@ async def check_user(client, message: Message):
                 f"│ Badges: {', '.join(badges) if badges else 'No public badges'}\n"
                 f"└─────────────────────────────┘"
             )
-            return avatar_url, info_text
+            return avatar_bytes, info_text
         except Exception as e:
             return None, f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
 
     try:
         for idx, (username, password) in enumerate(user_pass_list, start=1):
             print(f"Checking username {idx}/{len(user_pass_list)}: {username}")
-            avatar_url, info_text = await asyncio.to_thread(fetch_roblox_user_info_sync, username)
+            avatar_bytes, info_text = await asyncio.to_thread(fetch_roblox_user_info_sync, username, password)
 
-            if avatar_url is None:
+            if avatar_bytes is None:
                 await message.reply(info_text)
             else:
-                # Send photo with inline caption including tappable copy password
                 await client.send_photo(
                     chat_id=message.chat.id,
-                    photo=avatar_url,
+                    photo=io.BytesIO(avatar_bytes),
                     caption=info_text,
                     parse_mode=enums.ParseMode.MARKDOWN,
                 )
-
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
     except Exception as e:
         await message.reply(f"❌ Unexpected error occurred: {e}")
 
     await progress_message.delete()
+
 
 # === Start & Referral Commands ===
 
