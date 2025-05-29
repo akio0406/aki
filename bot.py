@@ -144,6 +144,8 @@ from pyrogram.types import Message
 import requests
 import asyncio
 import io
+from rembg import remove
+from PIL import Image
 
 @app.on_message(filters.command("checkuser"))
 async def check_user(client, message: Message):
@@ -200,13 +202,18 @@ async def check_user(client, message: Message):
             badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
             badges = [badge['name'] for badge in badges_data.get('data', [])]
 
-            avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
+            # Full-body avatar with white background
+            avatar_url = f"https://www.roblox.com/Thumbs/Avatar.ashx?x=420&y=420&format=png&userid={user_id}"
             try:
                 avatar_resp = requests.get(avatar_url, timeout=10)
                 avatar_resp.raise_for_status()
-                avatar_bytes = avatar_resp.content
-            except requests.exceptions.HTTPError:
-                avatar_bytes = None  # avatar not found
+                avatar_image = Image.open(io.BytesIO(avatar_resp.content)).convert("RGBA")
+                transparent_avatar = remove(avatar_image)
+                avatar_bytes = io.BytesIO()
+                transparent_avatar.save(avatar_bytes, format="PNG")
+                avatar_bytes.seek(0)
+            except Exception:
+                avatar_bytes = None
 
             info_text = (
                 f"┌─────────────────────────────┐\n"
@@ -237,12 +244,11 @@ async def check_user(client, message: Message):
             elif avatar_bytes:
                 await client.send_photo(
                     chat_id=message.chat.id,
-                    photo=io.BytesIO(avatar_bytes),
+                    photo=avatar_bytes,
                     caption=info_text,
                     parse_mode=enums.ParseMode.MARKDOWN,
                 )
             else:
-                # Send text only if no avatar
                 await message.reply(info_text)
 
             await asyncio.sleep(0.5)
@@ -250,7 +256,6 @@ async def check_user(client, message: Message):
         await message.reply(f"❌ Unexpected error occurred: {e}")
 
     await progress_message.delete()
-
 
 
 # === Start & Referral Commands ===
