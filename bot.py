@@ -155,11 +155,10 @@ async def check_user(client, message: Message):
         await message.reply("❌ The replied file must be a .txt file.")
         return
 
-    # Download file and read bytes manually (fix)
+    # Download file and read content
     file_path = await client.download_media(document)
     with open(file_path, "rb") as f:
-        file_bytes = f.read()
-    content = file_bytes.decode("utf-8")
+        content = f.read().decode("utf-8")
 
     usernames = []
     for line in content.splitlines():
@@ -175,9 +174,10 @@ async def check_user(client, message: Message):
 
     progress_message = await message.reply(f"⏳ Checking {len(usernames)} usernames...")
 
-    async def fetch_roblox_user_info_sync(username):
+    # This is a blocking function that we run in a thread pool to avoid blocking event loop
+    def fetch_roblox_user_info_sync(username):
         try:
-            # POST to get user id
+            # Get user id
             r = requests.post(
                 "https://users.roblox.com/v1/usernames/users",
                 json={"usernames": [username], "excludeBannedUsers": False},
@@ -232,14 +232,11 @@ async def check_user(client, message: Message):
 
     text = "\n\n".join(results)
 
-    if len(text) > 4000:
-        for chunk_start in range(0, len(text), 4000):
-            await message.reply(text[chunk_start:chunk_start + 4000], parse_mode=enums.ParseMode.MARKDOWN)
-    else:
-        await message.reply(text, parse_mode=enums.ParseMode.MARKDOWN)
+    # Telegram message max length ~4096, chunk accordingly
+    for i in range(0, len(text), 4000):
+        await message.reply(text[i:i+4000], parse_mode=enums.ParseMode.MARKDOWN)
 
     await progress_message.delete()
-
 
 # === Start & Referral Commands ===
 
