@@ -6,3 +6,4 @@ supabase
 replicate
 pillow
 rembg
+onnxruntime
