@@ -139,6 +139,105 @@ def redeem_referral_code(user_id, referral_code):
 
     return "✅ Successfully redeemed! You and your friend earned +1 point!"
 
+from pyrogram import filters, enums
+from pyrogram.types import Message
+import requests
+import asyncio
+
+@app.on_message(filters.command("checkuser"))
+async def check_user(client, message: Message):
+    if not message.reply_to_message or not message.reply_to_message.document:
+        await message.reply("❌ Please reply to a .txt file containing Roblox usernames.")
+        return
+
+    document = message.reply_to_message.document
+    if not document.file_name.endswith(".txt"):
+        await message.reply("❌ The replied file must be a .txt file.")
+        return
+
+    # Download file bytes
+    file_bytes = await client.download_media(document, file_bytes=True)
+    content = file_bytes.decode("utf-8")
+
+    usernames = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        username = line.split(":", 1)[0]
+        usernames.append(username)
+
+    if not usernames:
+        await message.reply("❌ No usernames found in the file.")
+        return
+
+    progress_message = await message.reply(f"⏳ Checking {len(usernames)} usernames...")
+
+    async def fetch_roblox_user_info_sync(username):
+        try:
+            # POST to get user id
+            r = requests.post(
+                "https://users.roblox.com/v1/usernames/users",
+                json={"usernames": [username], "excludeBannedUsers": False},
+                timeout=10
+            )
+            r.raise_for_status()
+            data = r.json()
+            if not data.get("data"):
+                return f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
+
+            user_data = data["data"][0]
+            user_id = user_data["id"]
+
+            # Get user info
+            user_info = requests.get(f"https://users.roblox.com/v1/users/{user_id}", timeout=10).json()
+            friends_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/friends/count", timeout=10).json()
+            followers_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followers/count", timeout=10).json()
+            following_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count", timeout=10).json()
+            badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
+            badges = [badge['name'] for badge in badges_data.get('data', [])]
+            avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
+
+            result = f"""
+┌─────────────────────────────┐
+│        🕵️ Roblox Info       │
+├─────────────────────────────┤
+│ **Display Name:** {user_info.get("displayName", "N/A")}
+│ **Username:** {user_info.get("name", "N/A")}
+│ **User ID:** `{user_id}`
+│ **Created On:** {user_info.get("created", "N/A")}
+│ **Description:** {user_info.get("description", "No bio set") or "No bio set"}
+│ **Friends:** {friends_count.get("count", "N/A")}
+│ **Followers:** {followers_count.get("count", "N/A")}
+│ **Following:** {following_count.get("count", "N/A")}
+│ **Badges:** {", ".join(badges) if badges else "No public badges"}
+├─────────────────────────────┤
+│ [🖼️ Avatar Image]({avatar_url})
+└─────────────────────────────┘
+""".strip()
+
+            return result
+        except Exception as e:
+            return f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
+
+    results = []
+    loop = asyncio.get_event_loop()
+
+    for username in usernames:
+        info = await loop.run_in_executor(None, fetch_roblox_user_info_sync, username)
+        results.append(info)
+        await asyncio.sleep(0.3)  # polite delay
+
+    text = "\n\n".join(results)
+
+    if len(text) > 4000:
+        for chunk_start in range(0, len(text), 4000):
+            await message.reply(text[chunk_start:chunk_start + 4000], parse_mode=enums.ParseMode.MARKDOWN)
+    else:
+        await message.reply(text, parse_mode=enums.ParseMode.MARKDOWN)
+
+    await progress_message.delete()
+
 # === Start & Referral Commands ===
 
 @app.on_message(filters.command("start"))
@@ -154,8 +253,6 @@ async def start(client, message):
         "❓ No money? Use `/me` to earn points with referrals!",
         reply_markup=keyboard
     )
-
-
 
 @app.on_message(filters.command("me"))
 async def me(client, message):
@@ -1405,104 +1502,5 @@ async def make_logo(client, message: Message):
 
     except Exception as e:
         await progress_message.edit(f"❌ Exception: `{e}`")
-
-from pyrogram import filters, enums
-from pyrogram.types import Message
-import requests
-import asyncio
-
-@app.on_message(filters.command("checkuser"))
-async def check_user(client, message: Message):
-    if not message.reply_to_message or not message.reply_to_message.document:
-        await message.reply("❌ Please reply to a .txt file containing Roblox usernames.")
-        return
-
-    document = message.reply_to_message.document
-    if not document.file_name.endswith(".txt"):
-        await message.reply("❌ The replied file must be a .txt file.")
-        return
-
-    # Download file bytes
-    file_bytes = await client.download_media(document, file_bytes=True)
-    content = file_bytes.decode("utf-8")
-
-    usernames = []
-    for line in content.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        username = line.split(":", 1)[0]
-        usernames.append(username)
-
-    if not usernames:
-        await message.reply("❌ No usernames found in the file.")
-        return
-
-    progress_message = await message.reply(f"⏳ Checking {len(usernames)} usernames...")
-
-    async def fetch_roblox_user_info_sync(username):
-        try:
-            # POST to get user id
-            r = requests.post(
-                "https://users.roblox.com/v1/usernames/users",
-                json={"usernames": [username], "excludeBannedUsers": False},
-                timeout=10
-            )
-            r.raise_for_status()
-            data = r.json()
-            if not data.get("data"):
-                return f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
-
-            user_data = data["data"][0]
-            user_id = user_data["id"]
-
-            # Get user info
-            user_info = requests.get(f"https://users.roblox.com/v1/users/{user_id}", timeout=10).json()
-            friends_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/friends/count", timeout=10).json()
-            followers_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followers/count", timeout=10).json()
-            following_count = requests.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count", timeout=10).json()
-            badges_data = requests.get(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=5&sortOrder=Desc", timeout=10).json()
-            badges = [badge['name'] for badge in badges_data.get('data', [])]
-            avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&size=150x150&format=png"
-
-            result = f"""
-┌─────────────────────────────┐
-│        🕵️ Roblox Info       │
-├─────────────────────────────┤
-│ **Display Name:** {user_info.get("displayName", "N/A")}
-│ **Username:** {user_info.get("name", "N/A")}
-│ **User ID:** `{user_id}`
-│ **Created On:** {user_info.get("created", "N/A")}
-│ **Description:** {user_info.get("description", "No bio set") or "No bio set"}
-│ **Friends:** {friends_count.get("count", "N/A")}
-│ **Followers:** {followers_count.get("count", "N/A")}
-│ **Following:** {following_count.get("count", "N/A")}
-│ **Badges:** {", ".join(badges) if badges else "No public badges"}
-├─────────────────────────────┤
-│ [🖼️ Avatar Image]({avatar_url})
-└─────────────────────────────┘
-""".strip()
-
-            return result
-        except Exception as e:
-            return f"┌─────────────┐\n│ ❌ ERROR │\n└─────────────┘\n**{username}** - {e}"
-
-    results = []
-    loop = asyncio.get_event_loop()
-
-    for username in usernames:
-        info = await loop.run_in_executor(None, fetch_roblox_user_info_sync, username)
-        results.append(info)
-        await asyncio.sleep(0.3)  # polite delay
-
-    text = "\n\n".join(results)
-
-    if len(text) > 4000:
-        for chunk_start in range(0, len(text), 4000):
-            await message.reply(text[chunk_start:chunk_start + 4000], parse_mode=enums.ParseMode.MARKDOWN)
-    else:
-        await message.reply(text, parse_mode=enums.ParseMode.MARKDOWN)
-
-    await progress_message.delete()
 
 app.run()
