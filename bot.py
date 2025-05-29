@@ -1432,48 +1432,42 @@ async def log_all_messages(client, message: Message):
 async def check_user(client, message: Message):
     logging.info(f"Received /checkuser command from user {message.from_user.id} in chat {message.chat.id}")
     try:
-        if not message.reply_to_message or not message.reply_to_message.document:
-            await message.reply("❌ Please reply to a .txt file containing Roblox usernames and passwords (username:password).")
-            logging.info("No replied message or document found")
+        # Allow reply to file or direct file
+        doc_msg = (
+            message.reply_to_message if message.reply_to_message and message.reply_to_message.document
+            else message if message.document else None
+        )
+
+        if not doc_msg or not doc_msg.document.file_name.endswith(".txt"):
+            await message.reply("❌ Please reply to or send a `.txt` file containing Roblox `username:password` lines.")
             return
 
-        document = message.reply_to_message.document
-        if not document.file_name.endswith(".txt"):
-            await message.reply("❌ The replied file must be a .txt file.")
-            logging.info("Replied file is not .txt")
-            return
-
-        file_path = await client.download_media(document)
+        file_path = await client.download_media(doc_msg)
         if not file_path:
             await message.reply("❌ Failed to download the file.")
-            logging.error("download_media returned None or empty path")
             return
         logging.info(f"Downloaded file to {file_path}")
 
-        with open(file_path, "rb") as f:
-            content = f.read().decode("utf-8")
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
         user_pass_list = []
-        for line in content.splitlines():
+        for line in lines:
             line = line.strip()
             if not line:
                 continue
             parts = line.split(":", 1)
             if len(parts) == 2:
                 username, password = parts[0].strip(), parts[1].strip()
-            else:
-                username, password = parts[0].strip(), "N/A"
-            user_pass_list.append((username, password))
+                user_pass_list.append((username, password))
 
         if not user_pass_list:
-            await message.reply("❌ No usernames (and passwords) found in the file.")
-            logging.info("No valid usernames in file")
+            await message.reply("❌ No valid `username:password` lines found.")
             return
 
-        progress_message = await message.reply(f"⏳ Checking {len(user_pass_list)} usernames...")
-        logging.info(f"Starting to check {len(user_pass_list)} usernames")
+        progress_message = await message.reply(f"🔍 Checking `{len(user_pass_list)}` usernames...")
 
-        def fetch_roblox_user_info_sync(username, password):
+        def fetch_info(username, password):
             try:
                 logging.info(f"Fetching info for username: {username}")
                 r = requests.post(
@@ -1484,7 +1478,6 @@ async def check_user(client, message: Message):
                 r.raise_for_status()
                 data = r.json()
                 if not data.get("data"):
-                    logging.info(f"Username not found: {username}")
                     return None, None, f"┌─────────────┐\n│ ❌ NOT FOUND │\n└─────────────┘\n**{username}**"
 
                 user_data = data["data"][0]
@@ -1540,13 +1533,13 @@ async def check_user(client, message: Message):
 
         for idx, (username, password) in enumerate(user_pass_list, start=1):
             logging.info(f"Checking username {idx}/{len(user_pass_list)}: {username}")
-            avatar_bytes, info_text, error_msg = await asyncio.to_thread(fetch_roblox_user_info_sync, username, password)
+            avatar_bytes, info_text, error_msg = await asyncio.to_thread(fetch_info, username, password)
 
             try:
                 if error_msg:
                     await message.reply(error_msg)
                 elif avatar_bytes:
-                    avatar_bytes.name = "avatar.png"  # Required for Pyrogram
+                    avatar_bytes.name = "avatar.png"
                     await client.send_photo(
                         chat_id=message.chat.id,
                         photo=avatar_bytes,
@@ -1559,12 +1552,11 @@ async def check_user(client, message: Message):
                 logging.error(f"Failed to send result for {username}: {send_exc}")
                 await message.reply(f"❌ Failed to send result for {username}: {send_exc}")
 
-            # Add a short delay to avoid flooding limits
             await asyncio.sleep(0.5)
 
         await progress_message.delete()
         logging.info("Finished checking all usernames")
-
+        await message.reply("✅ Done checking users.")
     except Exception as e:
         logging.error(f"Unexpected error in check_user handler: {e}", exc_info=True)
         await message.reply(f"❌ Unexpected error occurred: {e}")
